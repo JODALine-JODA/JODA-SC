@@ -1,6 +1,7 @@
 {
-  "name": "JODAQuotaSale",
+  "name": "JODASale",
   "network": "bsc-testnet",
   "address": "0xa74381484684FBBaB68b1a23a0dd5c3C16aca9c2",
-  "abi": "../abi/JODAQuotaSale.json"
+  "abi": "../../abi/JODASale.json"
 }
+
