@@ -1,6 +1,6 @@
 {
   "name": "JODA",
   "network": "bsc-testnet",
-  "address": "0xC67176c68469Be5355b79C45f4Aa951FAC27C12c",
+  "address": "0x0742A5b330199E48A2226929D622F9D622b8CFb6",
   "abi": "../abi/JODA.json"
 }
