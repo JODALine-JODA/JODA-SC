@@ -6,20 +6,28 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title JODASale
- * @notice Direct sale of JODA for BNB with min/max buy, anti-whale cap, and pause controls.
+ * @notice Direct sale of JODA for BNB with min/tx limits, rolling per-user cap, and pause control.
+ * - tokensPerBNB: JODA per 1 BNB, in token-wei (18 decimals)
+ * - minBuyWei: minimum BNB per transaction (owner-settable; defaults to ~0.075 BNB ≈ $30 if BNB≈$400)
+ * - perTxMaxWei: optional max BNB per transaction (0 disables)
+ * - perUserCapWei + windowSeconds: anti-whale rolling limit per wallet
+ * - saleActive: master switch
+ * - Contract must hold enough JODA to fulfill buys (fund by transferring JODA to this contract)
  */
 contract JODASale is Ownable {
     IERC20 public immutable token;
     address payable public treasury;
 
-    uint256 public tokensPerBNB;      // JODA per 1 BNB (token wei per BNB wei)
-    uint256 public minBuyWei;         // Minimum per transaction in wei (set by owner)
-    uint256 public perTxMaxWei;       // Optional max per transaction in wei
+    // Pricing & limits
+    uint256 public tokensPerBNB;   // JODA per 1 BNB, in token-wei
+    uint256 public minBuyWei;      // minimum per tx (wei)
+    uint256 public perTxMaxWei;    // optional max per tx (wei), 0 = disabled
 
+    // Pause
     bool public saleActive = true;
 
-    // Anti-whale limiter
-    uint256 public perUserCapWei = 1 ether; 
+    // Rolling per-user cap
+    uint256 public perUserCapWei = 1 ether; // default 1 BNB/month (change via setCap)
     uint256 public windowSeconds = 30 days;
 
     struct Window {
@@ -47,7 +55,10 @@ contract JODASale is Ownable {
         token = IERC20(token_);
         treasury = treasury_;
         tokensPerBNB = tokensPerBNB_;
-        minBuyWei = 75000000000000000; // default ~0.075 BNB (≈ $30 at $400/BNB)
+
+        // Default ~$30 minimum if BNB ≈ $400: 0.075 BNB = 0.075 * 1e18 wei
+        // You can change this anytime with setMinBuyWei(...)
+        minBuyWei = 75_000_000_000_000_000; // 0.075 BNB in wei
     }
 
     // -------- Views --------
@@ -55,6 +66,7 @@ contract JODASale is Ownable {
         return token.balanceOf(address(this));
     }
 
+    /// @notice Helper for UI: how many JODA would buyer receive for bnbWei?
     function previewTokensForWei(uint256 bnbWei) external view returns (uint256) {
         return bnbWei * tokensPerBNB;
     }
@@ -80,12 +92,12 @@ contract JODASale is Ownable {
     }
 
     function setMinBuyWei(uint256 newMin) external onlyOwner {
-        minBuyWei = newMin;
+        minBuyWei = newMin; // set 0 to disable the minimum
         emit MinBuyUpdated(newMin);
     }
 
     function setPerTxMaxWei(uint256 newMax) external onlyOwner {
-        perTxMaxWei = newMax;
+        perTxMaxWei = newMax; // set 0 to disable per-tx ceiling
         emit PerTxMaxUpdated(newMax);
     }
 
@@ -101,7 +113,7 @@ contract JODASale is Ownable {
         require(saleActive, "sale inactive");
         require(msg.value > 0, "no bnb sent");
 
-        // enforce min/max
+        // min / per-tx max
         require(msg.value >= minBuyWei, "below minimum buy");
         if (perTxMaxWei > 0) {
             require(msg.value <= perTxMaxWei, "over per-tx max");
@@ -116,11 +128,11 @@ contract JODASale is Ownable {
         require(w.spentWei + msg.value <= perUserCapWei, "over per-user cap");
         w.spentWei += msg.value;
 
-        // compute tokens
+        // compute & deliver tokens
         uint256 tokensOut = msg.value * tokensPerBNB;
         require(token.transfer(msg.sender, tokensOut), "token transfer failed");
 
-        // forward BNB
+        // forward BNB to treasury
         (bool ok, ) = treasury.call{value: msg.value}("");
         require(ok, "treasury transfer failed");
 
